@@ -1,0 +1,55 @@
+---
+title: "Project work"
+format: html
+editor: visual
+---
+
+```{r}
+install.packages("caTools")
+
+library(tidyverse)
+library(lme4)
+library(caTools)
+library(glmnet)
+
+mat_score <- read_delim("/Users/Coleton/Downloads/student+performance/student/student-mat.csv", delim= ";")
+head(mat_score,5)
+ms_fact <- mat_score |>
+  mutate(across(c(Medu, Fedu, traveltime, studytime, failures,
+                  famrel, freetime, goout, Dalc, Walc, health),
+                as.factor))
+set.seed(42)
+split <- sample.split(ms_fact$G3,SplitRatio = .8)
+train_mat<- subset(ms_fact,split ==TRUE)
+test_mat <- subset(ms_fact,split == FALSE)
+x <- model.matrix(G3~.,ms_fact )[,-1]
+y <- ms_fact$G3
+xtrain<-x[split,]
+ytrain <- y[split]
+xtest<-x[!split,]
+ytest<- y[!split]
+lambda_grid <- 10^seq(10,-2,length= 100)
+var_select <- glmnet(xtrain,ytrain,alpha = 1,lambda = lambda_grid)
+plot(var_select)
+vs_out <- cv.glmnet(xtrain,ytrain,alpha = 1)
+plot(vs_out)
+lambda_min <- vs_out$lambda.min
+coef <- predict(var_select,type = "coefficients",s = lambda_min)
+coef
+
+head(ms_fact)
+names(ms_fact)
+mixed_eff_1<- lmer(G3~age+Medu+Fedu+Fjob+studytime+freetime+failures+romantic+(1|school),data = ms_fact)
+summary(mixed_eff_1)
+pred_test <- predict(mixed_eff_1,newdata= test_mat)
+test_MSE <- mean((ytest-pred_test)^2)
+test_MSE
+library(leaps)
+var_select_lm<- regsubsets(G3~., train_mat,method = "seqrep",really.big = TRUE,nvmax = 100,)
+which.min(summary(var_select_lm)$cp)
+coef(var_select_lm,15)
+lm_select <- lm(G3 ~ failures+Fedu+traveltime+studytime+romantic+freetime+health+Dalc, data = train_mat)
+pred_test_lm <- predict(lm_select, newdata = test_mat)
+test_mse_lm <- mean((ytest-pred_test_lm)^2)
+test_mse_lm                                  
+```
