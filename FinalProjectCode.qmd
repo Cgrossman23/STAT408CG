@@ -1,0 +1,194 @@
+---
+title: "Project work"
+format: html
+editor: visual
+---
+
+```{r}
+install.packages("caTools")
+
+library(tidyverse)
+library(lme4)
+library(caTools)
+library(glmnet)
+dim
+
+mat_score <- read_delim("/Users/Coleton/Downloads/student+performance/student/student-mat.csv", delim= ";")
+head(mat_score,5)
+ms_fact <- mat_score |>
+  mutate(across(c(Medu, Fedu, traveltime, studytime, 
+                   freetime, goout, Dalc, Walc, health),
+                as.factor))
+
+set.seed(42)
+split <- sample.split(ms_fact$G3, SplitRatio = 0.8)
+
+train_mat <- subset(ms_fact, split == TRUE)
+test_mat  <- subset(ms_fact, split == FALSE)
+
+ms_fact_noG <- subset(ms_fact, select = -c(G1, G2))
+
+x <- model.matrix(G3 ~ ., data = ms_fact_noG)[ , -1]
+
+# Outcome
+y <- ms_fact$G3
+ms_fact <- ms_fact |> dplyr::select(-G1,-G2)
+# Train/test matrices
+xtrain <- x[split, ]
+ytrain <- y[split]
+names(ms_fact)
+ms_fact |> select(-G1,-G2)
+xtest  <- x[!split, ]
+ytest  <- y[!split]
+head(ms_fact)
+lambda_grid <- 10^seq(10,-2,length= 100)
+var_select <- glmnet(xtrain,ytrain,alpha = 1,lambda = lambda_grid)
+plot(var_select)
+vs_out <- cv.glmnet(xtrain,ytrain,alpha = 1)
+plot(vs_out)
+lambda_min <- vs_out$lambda.min
+print(lambda_min)
+coef <- predict(var_select,type = "coefficients",s = lambda_min)
+coef
+
+head(ms_fact)
+names(ms_fact)
+mixed_eff_1<- lmer(G3~Medu+studytime+failures+freetime+(1|school),data = ms_fact)
+pred_test <- predict(mixed_eff_1,newdata= test_mat)
+test_MSE <- mean((ytest-pred_test)^2)
+test_MSE
+summary(mixed_eff_1)
+lambda_1se <-vs_out$lambda.1se
+coef_1se <- predict(var_select,type = "coefficients", s = lambda_1se)
+coef_1se
+mixed_eff_1se <- lmer(G3~failures+(1|school), data = ms_fact)
+summary(mixed_eff_1se)
+pred_test_1se <- predict(mixed_eff_1se,newdata = test_mat)
+test_MSE_1se <- mean((ytest-pred_test_1se)^2)
+test_MSE_1se
+library(leaps)
+var_select_lm<- regsubsets(G3~., train_mat,method = "seqrep",really.big = TRUE,nvmax = 100,)
+which.min(summary(var_select_lm)$cp)
+coef(var_select_lm,15)
+lm_select <- lm(G3 ~ failures+Fedu+traveltime+studytime+romantic+freetime+health+Dalc, data = train_mat)
+pred_test_lm <- predict(lm_select, newdata = test_mat)
+test_mse_lm <- mean((ytest-pred_test_lm)^2)
+test_mse_lm 
+
+isSingular(mixed_eff_1) 
+# Multiple Linear Regression
+lm_1 <- lm(G3 ~ Medu + studytime+failures+freetime + school, data = ms_fact)
+plot(lm_1)
+summary(lm_1)
+pred_test_lm1 <- predict(lm_1, newdata = test_mat)
+test_mse_lm1 <- mean((ytest-pred_test_lm)^2)
+test_mse_lm1
+lm_1_se <- lm(G3 ~ failures + school, data = ms_fact )
+plot(lm_1_se)
+pred_test_lm_se <- predict(lm_1_se, newdata= test_mat)
+test_mse_lm_se <- mean((ytest-pred_test_lm_se)^2)
+
+```
+
+```{r}
+#Mostly Garbag/ Depreciated
+ms_fact_comp <- ms_fact |> mutate(comp_score = ((G1*.50)+(G2*.50))) |> select(-G1,-G2)
+ms_fact_comp
+train_mat_comp<- subset(ms_fact_comp,split ==TRUE)
+test_mat_comp <- subset(ms_fact_comp,split == FALSE)
+x_comp <- model.matrix(G3~.,ms_fact_comp )[,-1]
+y_comp <- ms_fact$G3
+xtrain_c<-x_comp[split,]
+ytrain_c <- y_comp[split]
+xtest_c<-x_comp[!split,]
+ytest_c<- y_comp[!split]
+var_select_comp <- glmnet(xtrain_c, ytrain_c,alpha = 1, lambda = lambda_grid)
+vs_out_c <- cv.glmnet(xtrain_c, ytrain_c, alpha = 1)
+lambda_min_c <- vs_out_c$lambda.min
+print(lambda_min_c)
+#Using Minimum
+coef_c_min <- predict(var_select_comp, type = "coefficients",s = lambda_min_c)
+coef_c_min
+names(ms_fact_comp)
+Mixed_eff_c_min <- lmer(G3~age+Fedu+failures+schoolsup+paid+activities+internet+famrel+health+internet+Walc+Dalc+absences+comp_score+(1|school),data = ms_fact_comp)
+summary(Mixed_eff_c_min)
+pred_test_c_min <- predict(Mixed_eff_c_min,newdata = test_mat_comp)
+test_MSe_c_min <- mean((ytest_c-pred_test_c_min)^2)
+test_MSe_c_min
+#Using 1se
+lambda_1se_c <- vs_out_c$lambda.1se
+coef_c_1se <- predict(var_select_comp, type = "coefficients",s= lambda_1se_c)
+coef_c_1se
+mixed_eff_c_1se <- lmer(G3~comp_score + (1|school),ms_fact_comp)
+#Using random slope for test composite between schools
+mixed_eff_c_slope <- lmer(G3~age+Fedu+failures+schoolsup+paid+activities+internet+famrel+health+internet+Walc+Dalc+absences+(comp_score|school),ms_fact_comp)
+#Singularity Issues with random slope
+#Will try bayesian approach to fix singularity issues
+
+
+
+```
+
+```{r}
+#Data Exploration
+names(mat_score)
+ggplot(data = mat_score, aes(x = G3, y = school, fill = school))+geom_boxplot()+labs(x = "Final Profiecency Score", y = "School")
+head(mat_score)
+mat_score_long <-mat_score |>  pivot_longer(cols = c(Medu,Fedu),names_to = "Parent",values_to = "Education")
+ggplot(data = mat_score_long, aes(x = as.factor(Education), y = G3)) +
+  geom_boxplot(aes(fill = Parent)) +
+  facet_wrap(~Parent, labeller = labeller(Parent = c(Fedu = "Father's Education", 
+                                                       Medu = "Mother's Education"))) +
+  labs(x = "Education Level", y = "Final Proficiency Score")
+mat_score |> 
+  mutate(combined_edu = Medu + Fedu) |> 
+  ggplot(aes(x = as.factor(combined_edu), y = G3, fill = as.factor(combined_edu))) +
+  geom_boxplot() +
+  labs(x = "Combined Parent Education Level", 
+       y = "Final Proficiency Score",
+       fill = "Combined Education")
+names(mat_score)
+mat_score_long_employ <- mat_score |> pivot_longer(cols = c(Mjob,Fjob), names_to = "Parent",values_to="Employment")  
+dim(mat_score)
+ggplot(data = mat_score,aes(x = G2, y = G3, color = school ))+geom_point()+geom_jitter()+labs(x= "G2 Period Score", y ="Final Proficiency Score")+geom_smooth(method = "lm")
+G2G3 <- lm(G3~G2, data= mat_score)
+summary(G2G3)
+```
+
+```{r}
+#Bayes Stuff
+library(BoomSpikeSlab)
+library(monomvn)
+library(blme)
+library(brms)
+library(rstanarm)
+#Weakly Informative Priors
+set.seed(42)
+priors_laplace <-  set_prior("double_exponential(0, 1)", class = "b")
+priors_h <- set_prior("horseshoe(df=1)",class = "b")
+priors_C <- set_prior("cauchy(0,1)" ,class = "b")
+bayes_fit_laplace <- brm(G3~.+(1|school),data = ms_fact,prior = priors_laplace, cores = 4, iter=5000, control = list(adapt_delta = .95))
+bayes_fit_h <- brm(G3~.+(1|school),data = ms_fact,prior = priors_h, cores = 4, iter=5000 , control = list(adapt_delta = .95))
+bayes_fit_C <- brm(G3~.+(1|school),data = ms_fact, prior = priors_C, cores = 4, iter = 5000, control = list(adapt_delta = .95))
+summary(bayes_fit_h)
+# MSEs 
+install.packages("performance")
+rmse_horshoe <- rmse(bayes_fit_h)
+HorseShoe_rep <- posterior_predict(bayes_fit_h, newdata= test_mat)
+HorseShoe_rep
+yhat_horseshoe <- apply(HorseShoe_rep,2,mean)
+mse_Horseshoe <- mean((ytest-yhat_horseshoe)^2)
+mse_Horseshoe
+Laplace_rep <- posterior_predict(bayes_fit_laplace, newdata = test_mat)
+yhat_laplace <- apply(Laplace_rep,2,mean)
+mse_laplace <- mean((ytest-Laplace_rep)^2)
+Cauchy_rep <- posterior_predict(bayes_fit_C, newdata = test_mat)
+yhat_Cauchy <- apply(Cauchy_rep,2,mean)
+mse_Cauchy <- mean((ytest-yhat_Cauchy)^2)
+mse_Cauchy
+summary(bayes_fit_C)
+summary(bayes_fit_h)
+summary(bayes_fit_laplace)
+pp_check(bayes_fit_h)
+posterior_summary(bayes_fit_h)
+```
